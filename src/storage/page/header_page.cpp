@@ -18,6 +18,7 @@ namespace bustub {
 
 /**
  * Record related
+ * name的长度要小于32；root_id要是有意义的page_id
  */
 auto HeaderPage::InsertRecord(const std::string &name, const page_id_t root_id) -> bool {
   assert(name.length() < 32);

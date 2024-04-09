@@ -46,7 +46,7 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id, in
  * Helper methods to set/get next page id
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_LEAF_PAGE_TYPE::GetNextPageId() const -> page_id_t { return INVALID_PAGE_ID; }
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::GetNextPageId() const -> page_id_t { return next_page_id_; }
 
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::SetNextPageId(page_id_t next_page_id) {next_page_id_ = next_page_id;}
@@ -80,7 +80,7 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::KeyIndex(const KeyType &key, const KeyComparato
 }
 
 /*
- * 插入叶<key,value>与页中
+ * 插入叶<key,value>与页中，返回插入后页的KV对数目
  * 1. key存在，返回
  * 2. 要插入尾端、
  * 3. 要插入中间
@@ -134,6 +134,7 @@ auto B_PLUS_TREE_LEAF_PAGE_TYPE::Lookup(const KeyType &key, ValueType *value, co
     if(index == GetSize() || keyComparator(array_[index].first,key) != 0){
       return false;
     }
+    *value = array_[index].second;
     return true;
 }
 
@@ -164,6 +165,11 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveAllTo(BPlusTreeLeafPage<KeyType, ValueType,
     SetSize(0);
 }
 
+/*
+ * 调用：sourceNode->MoveFirstToEndOf(v,destNode);
+ * 将sourceNode的第一个元素移到destNode的最后来
+ * 一般用于B+树删除元素时，当自身删除＜MinSize要求时，需要向相邻右边的节点页借1个KV对
+ * */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveFirstToEndOf(BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *recipient) {
   auto sourceFirstItem = GetItem(0);

@@ -99,7 +99,10 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Lookup(const KeyType &key, const KeyCompara
 }
 
 /*
- * 将一个新的key置为root
+ * 生成新的根节点叶面
+ * 用于根节点页面分裂，此时要开辟一个新的页作为新root，新root中有两个KV对(1个key)
+ * K  null | key1(newKey)
+ * V  oldV | newV
  * */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::PopulateNewRoot(const ValueType &oldValue, const KeyType &newKey, const ValueType &newValue) {
@@ -199,7 +202,8 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveAllTo(BPlusTreeInternalPage<KeyType, Va
 }
 
 /*
- * 将第一个KV对(其中K用middleKey赋值)移到另一个页后
+ * 内部节点页：将第一个KV对(其中K用middleKey赋值)移到另一个页后
+ * 同样用于B+树内部节点删除KV对后，需要向右边节点页借1个KV对的情况
  * */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveFirstToEndOf(BPlusTreeInternalPage<KeyType, ValueType, KeyComparator> *recipient, const KeyType &middleKey, BufferPoolManager *bufferPoolManager) {

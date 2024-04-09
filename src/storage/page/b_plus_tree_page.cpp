@@ -41,9 +41,16 @@ void BPlusTreePage::SetMaxSize(int size) { max_size_ = size; }
  * Generally, min page size == max page size / 2
  */
 auto BPlusTreePage::GetMinSize() const -> int {
-  // max_size_是M-1,[]向上取整则
-  // 叶节点 [M/2] - 1 ~ M - 1  最小的即max_size_/2
-  // 内部节点 [M / 2] ~ M - 1
+  // max_size_是M
+  // 叶节点 M/2 - 1 ~ M - 1  最小的即max_size_/2
+  // 内部节点 M/2 ~ M - 1
+  // 注意：
+  // 这里的GetSize()指的是KV对的数量，而由于内部节点第一个KV对中k为空，所以如果只看K的数量的话：
+  // 内部节点与叶节点的范围都是 M/2-1 ~ M-1
+  // 但实际KV对的数量：
+  // 内部节点： M/2 ~ M-1
+  // 叶节点： M/2-1 ~ M-1
+  // 叶节点比内部节点最小Size少1(KV对与k的区别)
   if(IsLeafPage()){
     return max_size_ / 2;
   }
