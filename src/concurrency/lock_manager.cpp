@@ -18,10 +18,18 @@
 
 namespace bustub {
 
+/*
+ * 给事务上锁，表级锁
+ * */
 auto LockManager::LockTable(Transaction *txn, LockMode lock_mode, const table_oid_t &oid) -> bool { return true; }
 
 auto LockManager::UnlockTable(Transaction *txn, const table_oid_t &oid) -> bool { return true; }
 
+/*
+ * 行级锁
+ * 在给定的lock_mode下获取rid上的锁。如果事务已经持有行上的锁，那么将锁升级到指定的lock_mode(如果可能的话)。
+ * 在某些情况下可能中止事务并抛出异常
+ * */
 auto LockManager::LockRow(Transaction *txn, LockMode lock_mode, const table_oid_t &oid, const RID &rid) -> bool {
   return true;
 }

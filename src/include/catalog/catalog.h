@@ -312,6 +312,7 @@ class Catalog {
    * @param table_name The name of the table for which indexes should be retrieved
    * @return A vector of IndexInfo* for each index on the given table, empty vector
    * in the event that the table exists but no indexes have been created for it
+   * 返回给定表上每个索引的IndexInfo*向量，如果表存在但没有为其创建索引，则为空向量
    */
   auto GetTableIndexes(const std::string &table_name) const -> std::vector<IndexInfo *> {
     // Ensure the table exists

@@ -35,6 +35,7 @@ class TransactionManager;
  */
 class LockManager {
  public:
+  /* shared: 读锁； exclusive: 写锁； intention_shared: 表级/页级读锁 ; intention_exclusive: 表级/页级写锁 */
   enum class LockMode { SHARED, EXCLUSIVE, INTENTION_SHARED, INTENTION_EXCLUSIVE, SHARED_INTENTION_EXCLUSIVE };
 
   /**

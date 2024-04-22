@@ -46,7 +46,7 @@ class IndexIterator {
   // add your own private member variables here
   BufferPoolManager *buffer_pool_manager_;
   Page *page_;
-  LeafPage *leaf_ = nullptr;
+  LeafPage *leaf_ = nullptr;  // 由page_强转为LeafPage类型
   int index_ = 0;
 };
 

@@ -706,6 +706,9 @@ auto BPLUSTREE_TYPE::Coalesce(N *neighbor_node, N *node, BPlusTreeInternalPage<K
  * index iterator
  * @return : index iterator
  */
+/*
+ * 叶节点页中KV对迭代器的Begin()函数
+ * */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
   if (root_page_id_ == INVALID_PAGE_ID) {
@@ -721,6 +724,9 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
  * first, then construct index iterator
  * @return : index iterator
  */
+/*
+ * 以KV对中key为所给key为开头的迭代器
+ * */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
   if (root_page_id_ == INVALID_PAGE_ID) {
