@@ -303,6 +303,7 @@ class Trie {
     if (key.empty()) {
       return false;
     }
+    this->latch_.WLock();
     // 遍历整个树, 如果每层存在对应字符，则遍历
     auto tree = &this->root_;
     for (auto c : key) {
@@ -316,12 +317,14 @@ class Trie {
     }
     // case1: 如果已存在此节点，返回false;
     if (tree->get()->IsEndNode()) {
+      this->latch_.WUnlock();
       return false;
     }
     // case2: 不存在此节点, 则创建一个TrieNodeWithValue, 一个运行时多态
     auto v = new TrieNodeWithValue(std::move(*(tree->get())),
                                    value);  // tips: 必须要将原节点移动过来，因为他还有对应的children;
     tree->reset(v);                         // tips: unique_ptr的reset方法用来替换原始指针
+    this->latch_.WUnlock();
     return true;
   }
 
@@ -347,6 +350,7 @@ class Trie {
     if (key.empty()) {
       return false;
     }
+    this->latch_.WLock();
     // 1. 根据给定的键遍历 trie。如果密钥不存在，请立即返回
     auto tree = &this->root_;
     std::vector<std::unique_ptr<TrieNode> *> keyNodes;  //用来存储遍历的node路径, 因为后面需要反向遍历
@@ -354,6 +358,7 @@ class Trie {
       auto next = tree->get()->GetChildNode(c);
       if (next == nullptr) {
         // 如果未找到对应的key, 返回错误
+        this->latch_.WUnlock();
         return false;
       }
       keyNodes.emplace_back(tree);
@@ -366,11 +371,13 @@ class Trie {
       auto pre = keyNodes[i];  // pre恰好是最后一个字符的前一个指向
       if (!tree->get()->IsEndNode() || tree->get()->HasChildren()) {
         // end conditon: 要删除的节点是end，或有其他的children, 停止遍历
+        this->latch_.WUnlock();
         return true;
       }
       pre->get()->RemoveChildNode(key[i]);  //这个对应关系，梳理下上面的过程很容易得知
       tree = pre;
     }
+    this->latch_.WUnlock();
     return true;
   }
 
@@ -400,6 +407,7 @@ class Trie {
       *success = false;  // tips: 通过指针模拟多返回值
       return {};
     }
+    latch_.RLock();
     // 遍历整个tree来查找
     auto tree = &this->root_;
     for (auto c : key) {
@@ -407,6 +415,7 @@ class Trie {
       if (next == nullptr) {
         // 1. 如果查不到对应的key, 返回 null + false;
         *success = false;
+        latch_.RUnlock();
         return {};
       }
       tree = next;
@@ -414,6 +423,7 @@ class Trie {
     // 2. 如果查到的终点, 不是End返回null + false;
     if (!tree->get()->IsEndNode()) {
       *success = false;
+      latch_.RUnlock();
       return {};
     }
     // 3. 如果是终点, 返回一个结果
@@ -421,9 +431,11 @@ class Trie {
     // tips: 一个安全性检查, 按理说, 终点都是TrieNodeWithValue类型的;
     if (end_node) {
       *success = true;
+      latch_.RUnlock();
       return end_node->GetValue();
     }
     *success = false;
+    latch_.RUnlock();
     return {};
   }
 };
