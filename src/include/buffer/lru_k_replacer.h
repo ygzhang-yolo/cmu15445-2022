@@ -140,6 +140,15 @@ class LRUKReplacer {
   [[maybe_unused]] size_t replacer_size_;
   [[maybe_unused]] size_t k_;
   std::mutex latch_;
+
+  std::list<frame_id_t> young_list_;  //新生代, 存放未满k_次的frame id, FIFO
+  std::list<frame_id_t> old_list_;    //老生代, 存放满足k_次的frame id, FIFO
+  // young/old对应的hashmap, 用来O(1)查找frame_id
+  std::unordered_map<frame_id_t, std::list<frame_id_t>::iterator> young_map_;
+  std::unordered_map<frame_id_t, std::list<frame_id_t>::iterator> old_map_;
+  // map: frame_id -> acess count / evictable
+  std::unordered_map<frame_id_t, size_t> access_count_;
+  std::unordered_map<frame_id_t, bool> is_evictable_;
 };
 
 }  // namespace bustub
