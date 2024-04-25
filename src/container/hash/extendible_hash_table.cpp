@@ -16,6 +16,7 @@
 #include <functional>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <utility>
 
 #include "container/hash/extendible_hash_table.h"
@@ -70,6 +71,7 @@ auto ExtendibleHashTable<K, V>::GetNumBucketsInternal() const -> int {
 // Find: 查找key对应的value
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Find(const K &key, V &value) -> bool {
+  std::scoped_lock<std::mutex> lock(this->latch_);
   auto index = this->IndexOf(key);      // 1. IndexOf找到key所在的bucket, 根据最后几位定位
   auto bucket_ptr = this->dir_[index];  
   return bucket_ptr->Find(key, value);  // 2. 用bucket的Find, 定位kv
@@ -78,28 +80,15 @@ auto ExtendibleHashTable<K, V>::Find(const K &key, V &value) -> bool {
 // TODO(ubuntu): 没有实现Shrink和Combination
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Remove(const K &key) -> bool {
+  std::scoped_lock<std::mutex> lock(this->latch_);
   auto bucket_ptr = this->dir_[this->IndexOf(key)]; //同Find
   return bucket_ptr->Remove(key);
 }
 // Insert: 插入一个kv到哈希表中
-//
-  /**
-   *
-   * TODO(P1): Add implementation
-   *
-   * @brief Insert the given key-value pair into the hash table.
-   * If a key already exists, the value should be updated.
-   * If the bucket is full and can't be inserted, do the following steps before retrying:
-   *    1. If the local depth of the bucket is equal to the global depth,
-   *        increment the global depth and double the size of the directory.
-   *    2. Increment the local depth of the bucket.
-   *    3. Split the bucket and redistribute directory pointers & the kv pairs in the bucket.
-   *
-   * @param key The key to be inserted.
-   * @param value The value to be inserted.
-   */
+// TODO(ubuntu): 锁的粒度可以更小一点，为每个bucket放一个锁
 template <typename K, typename V>
 void ExtendibleHashTable<K, V>::Insert(const K &key, const V &value) {
+  std::scoped_lock<std::mutex> lock(this->latch_);
   auto bucket_ptr = this->dir_[this->IndexOf(key)];
   // 1. 如果key存在, 直接更新
   for(auto &p : bucket_ptr->GetItems()) {
@@ -182,7 +171,6 @@ auto ExtendibleHashTable<K, V>::Bucket::Remove(const K &key) -> bool {
 // Insert: 将key插入bucket
 template <typename K, typename V>
 auto ExtendibleHashTable<K, V>::Bucket::Insert(const K &key, const V &value) -> bool {
-  // TODO(ubuntu): 我交换1,2步的顺序, 是否有潜在的bug, 我觉得这样是更符合逻辑的
   // 1. 如果key已经存在, 更新value;
   for(auto &p : list_) {
     if(p.first == key) {
