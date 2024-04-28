@@ -43,6 +43,9 @@ class SimpleAggregationHashTable {
       : agg_exprs_{agg_exprs}, agg_types_{agg_types} {}
 
   /** @return The initial aggregrate value for this aggregation executor */
+  /*
+   * 初始化聚合列表，根据agg_types_ 初始化values
+   * */
   auto GenerateInitialAggregateValue() -> AggregateValue {
     std::vector<Value> values{};
     for (const auto &agg_type : agg_types_) {
@@ -56,6 +59,7 @@ class SimpleAggregationHashTable {
         case AggregationType::MinAggregate:
         case AggregationType::MaxAggregate:
           // Others starts at null.
+          // 初始化为Integer的空元素
           values.emplace_back(ValueFactory::GetNullValueByType(TypeId::INTEGER));
           break;
       }
@@ -70,14 +74,52 @@ class SimpleAggregationHashTable {
    * @param[out] result The output aggregate value
    * @param input The input value
    */
+   /*
+    * 将输入值合并到聚合结果中，根据定义的聚合类型（如计数、求和、最小值、最大值等）进行适当的操作
+    * 例： SELECT COUNT(*), MAX(age), SUM(salary) FROM employees
+    * agg_exprs_: COUNT，MAX，SUM
+    * input->aggregates_: COUNT(*), MAX(age), SUM(salary) 新进入的聚合输入值
+    * result->aggregates_: COUNT(*), MAX(age), SUM(salary) 最后的聚合输出结果
+    * 步骤：
+    * CountStarAggregate ＝ COUNT(*)/(1),记录行数，不论输入值如何，都简单地在当前结果上加1
+    * CountAggregate ＝ COUNT(列), 仅记录非空值的数，即该值非空时，才加1
+    * SumAggregate = SUM(), 将新输入的对应值加在result上
+    * MinAggregate = MIM() / MaxAggregate = MAX() 需要注意的是都要处理初始值，比如input对应位置的为空时。
+    * */
   void CombineAggregateValues(AggregateValue *result, const AggregateValue &input) {
     for (uint32_t i = 0; i < agg_exprs_.size(); i++) {
       switch (agg_types_[i]) {
         case AggregationType::CountStarAggregate:
+          result->aggregates_[i] = result->aggregates_[i].Add(ValueFactory::GetIntegerValue(1));
+          break;
         case AggregationType::CountAggregate:
+          if (result->aggregates_[i].IsNull()) {
+            result->aggregates_[i] = ValueFactory::GetIntegerValue(0);
+          }
+          if (!input.aggregates_[i].IsNull()) {
+            result->aggregates_[i] = result->aggregates_[i].Add(ValueFactory::GetIntegerValue(1));
+          }
+          break;
         case AggregationType::SumAggregate:
+          if (result->aggregates_[i].IsNull()) {
+            result->aggregates_[i] = input.aggregates_[i];
+          } else if (!input.aggregates_[i].IsNull()) {
+            result->aggregates_[i] = result->aggregates_[i].Add(input.aggregates_[i]);
+          }
+          break;
         case AggregationType::MinAggregate:
+          if (result->aggregates_[i].IsNull()) {
+            result->aggregates_[i] = input.aggregates_[i];
+          } else if (!input.aggregates_[i].IsNull()) {
+            result->aggregates_[i] = result->aggregates_[i].Min(input.aggregates_[i]);
+          }
+          break;
         case AggregationType::MaxAggregate:
+          if (result->aggregates_[i].IsNull()) {
+            result->aggregates_[i] = input.aggregates_[i];
+          } else if (!input.aggregates_[i].IsNull()) {
+            result->aggregates_[i] = result->aggregates_[i].Max(input.aggregates_[i]);
+          }
           break;
       }
     }
@@ -88,6 +130,10 @@ class SimpleAggregationHashTable {
    * @param agg_key the key to be inserted
    * @param agg_val the value to be inserted
    */
+   /*
+    * 作用：在查到符合条件的记录后，更新sql语句中要求的聚合函数的值(如果是第一个就初始化~)
+    * 在查到符合条件的后，agg_executor的Init函数会调用InsertCombine
+    * */
   void InsertCombine(const AggregateKey &agg_key, const AggregateValue &agg_val) {
     if (ht_.count(agg_key) == 0) {
       ht_.insert({agg_key, GenerateInitialAggregateValue()});
@@ -134,6 +180,13 @@ class SimpleAggregationHashTable {
 
   /** @return Iterator to the end of the hash table */
   auto End() -> Iterator { return Iterator{ht_.cend()}; }
+
+  /*
+   * 新增：
+   * */
+  auto Size() -> size_t { return ht_.size(); }
+  void InsertIntialCombine() { ht_.insert({{std::vector<Value>()}, GenerateInitialAggregateValue()}); }
+
 
  private:
   /** The hash table is just a map from aggregate keys to aggregate values */
@@ -200,9 +253,12 @@ class AggregationExecutor : public AbstractExecutor {
   const AggregationPlanNode *plan_;
   /** The child executor that produces tuples over which the aggregation is computed */
   std::unique_ptr<AbstractExecutor> child_;
+
+
+  /* 新增 */
   /** Simple aggregation hash table */
-  // TODO(Student): Uncomment SimpleAggregationHashTable aht_;
+  SimpleAggregationHashTable aht_;  // hash table
   /** Simple aggregation hash table iterator */
-  // TODO(Student): Uncomment SimpleAggregationHashTable::Iterator aht_iterator_;
+  SimpleAggregationHashTable::Iterator aht_iterator_;
 };
 }  // namespace bustub

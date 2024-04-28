@@ -162,6 +162,7 @@ auto BufferPoolManagerInstance::FetchPgImp(page_id_t page_id) -> Page * {
     }
 
     pages_[frameId].ResetMemory();
+    page_table_->Remove(oldPageId);
   }
 
   page_table_->Insert(page_id,frameId); // 插入新的键值对
