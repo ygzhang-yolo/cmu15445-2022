@@ -448,6 +448,7 @@ void BPLUSTREE_TYPE::InterInsertParent(BPlusTreePage *old_node, const KeyType &k
 */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::InterFindLeaf(const KeyType &key, Operation operation, Transaction *transaction, bool leftMost, bool rightMost) -> Page * {
+  assert(root_page_id_ != INVALID_PAGE_ID);
   auto page = this->buffer_pool_manager_->FetchPage(root_page_id_);
   auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
   LOG_DEBUG("here");
@@ -469,7 +470,9 @@ auto BPLUSTREE_TYPE::InterFindLeaf(const KeyType &key, Operation operation, Tran
     auto child_page = this->buffer_pool_manager_->FetchPage(child_page_id);
     auto child_node = reinterpret_cast<BPlusTreePage *>(child_page->GetData());
 
-    this->buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+    if(operation == Operation::SEARCH) {
+      this->buffer_pool_manager_->UnpinPage(page->GetPageId(), false);
+    }
     page = child_page;
     node = child_node;
   }

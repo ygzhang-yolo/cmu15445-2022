@@ -68,9 +68,9 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueIndex(const ValueType &value) const ->
   // 步骤是遍历array_(0-size)，找到pair.second与value一样的，返回其对应的index(可以用指针作差来表示，
   // 这里使用std::distance函数，能适应迭代器，更具有普适性。作差只适用于数组指针)
   // 那么这种遍历查找就可以用函数模板 find_if来写
-  auto item = std::find_if(array_,array_+GetSize(),[&value](const auto &pair){
+  auto it = std::find_if(array_,array_+GetSize(),[&value](const auto &pair){
     return pair.second == value;});
-  return std::distance(array_,item);
+  return std::distance(array_,it);
 }
 
 
@@ -85,19 +85,19 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::ValueIndex(const ValueType &value) const ->
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::Lookup(const KeyType &key, const KeyComparator &comparator) const -> ValueType {
   // 查找第一个不小于key的页位置
-  auto item = std::lower_bound(array_ + 1, array_ + GetSize(), key, [&comparator](const auto &pair, auto k) {
-    return comparator(pair.first, k) < 0;  // 默认行为是 !(element<k)时返回，即查找第一个≥k的值
-  });
+  // 默认行为是 !(element<k)时返回，即查找第一个≥k的值
+  auto target = std::lower_bound(array_ + 1, array_ + GetSize(), key,
+                                 [&comparator](const auto &pair, auto k) { return comparator(pair.first, k) < 0; });
   // 1. key比此页都大, 返回最右侧指针
-  if (item == array_ + GetSize()) {
+  if (target == array_ + GetSize()) {
     return ValueAt(GetSize() - 1);
   }
   // 2. key位于页中, 返回对应的指针
-  if (comparator(item->first, key) == 0) {
-    return item->second;
+  if (comparator(target->first, key) == 0) {
+    return target->second;
   }
   // 3. key不在此页, 返回前一个指针
-  return std::prev(item)->second;
+  return std::prev(target)->second;
 }
 
 /*
@@ -112,6 +112,10 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveHalfTo(BPlusTreeInternalPage<KeyType, V
   int split_size = GetSize() - split_from_index;
   SetSize(split_from_index);  // 设置分离后，原页中的size
   recipient->CopyNFrom(array_ + split_from_index, split_size, bufferPoolManager);
+  // int start_split_indx = GetMinSize();
+  // int original_size = GetSize();
+  // SetSize(start_split_indx);
+  // recipient->CopyNFrom(array_ + start_split_indx, original_size - start_split_indx, bufferPoolManager);
 }
 /*
  * 生成新的根节点叶面
@@ -158,13 +162,13 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertNodeAfter(const ValueType &oldValue, 
  * */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyNFrom(std::pair<KeyType, ValueType> *items, int size, BufferPoolManager *bufferPoolManager) {
-  std::copy(items, items+size, array_+size);
+  std::copy(items, items+size, array_+GetSize());
   // 2.
   for(int i = 0; i < size; ++i){
     // 获得V对应的页
     auto page = bufferPoolManager->FetchPage((items+i)->second); // 当然也可以是ValueIndex(i + GetSize())
     // 将其data转为BPlusTreePage类型，才能设置parent page id
-    auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+    auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());-
     node->SetParentPageId(GetPageId());
     // 解除固定，告诉Buffer pool现在是脏页(不立即写回)
     bufferPoolManager->UnpinPage(page->GetPageId(),true);
