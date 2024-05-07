@@ -22,6 +22,7 @@
 namespace bustub {
 
 #define BPLUSTREE_TYPE BPlusTree<KeyType, ValueType, KeyComparator>
+enum class Operation { SEARCH, INSERT, DELETE };
 
 /**
  * Main class providing the API for the Interactive B+ Tree.
@@ -81,6 +82,16 @@ class BPlusTree {
   void ToGraph(BPlusTreePage *page, BufferPoolManager *bpm, std::ofstream &out) const;
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
+  
+  /*自定义的内部功能函数, 用来实现各种功能*/
+  void InterStartNewTree(const KeyType &key, const ValueType &value);
+  auto InterInsertLeaf(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool;
+  void InterInsertParent(BPlusTreePage *old_node, const KeyType &key, BPlusTreePage *new_node, Transaction *transaction);
+  auto InterFindLeaf(const KeyType &key, Operation operation, Transaction *transaction = nullptr, bool leftMost = false,
+                bool rightMost = false) -> Page *;
+
+  template <typename N>
+  auto Split(N *node) -> N *; //用来分裂
 
   // member variable
   std::string index_name_;

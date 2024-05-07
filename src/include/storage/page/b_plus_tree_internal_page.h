@@ -42,8 +42,24 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   void SetKeyAt(int index, const KeyType &key);
   auto ValueAt(int index) const -> ValueType;
 
+  void SetValueAt(int index, const ValueType &value);
+  auto ValueIndex(const ValueType &value) const -> int;
+
+  // 其他补充的功能函数
+  auto Lookup(const KeyType &key, const KeyComparator &comparator) const -> ValueType;  //查找Key所在的子树
+  void PopulateNewRoot(const ValueType &oldValue, const KeyType &newKey, const ValueType &newValue);
+  auto InsertNodeAfter(const ValueType &oldValue, const KeyType &newKey, const ValueType &newValue) -> int;
+
+ 
+  void MoveHalfTo(BPlusTreeInternalPage *recipient, BufferPoolManager *bufferPoolManager);
+
+
  private:
   // Flexible array member for page data.
   MappingType array_[1];
+
+  // internal method, 内部辅助方法
+  void CopyNFrom(MappingType *items, int size, BufferPoolManager *bufferPoolManager);
+
 };
 }  // namespace bustub
