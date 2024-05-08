@@ -56,8 +56,14 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   void SetArrayPage(int index, const KeyType &key, const ValueType &value);
   auto KeyAt(int index) const -> KeyType;
   auto KeyIndex(const KeyType &key, const KeyComparator &comparator) const -> int;  //查找key在页中的index
+  auto GetItem(int index) -> const MappingType &;
 
   void MoveHalfTo(BPlusTreeLeafPage *recipient);
+  void MoveFirstToEndOf(BPlusTreeLeafPage *recipient);
+  void MoveLastToFrontOf(BPlusTreeLeafPage *recipient);
+  void MoveAllTo(BPlusTreeLeafPage *recipient);
+
+  auto RemoveAndDeleteRecord(const KeyType &key, const KeyComparator &keyComparator) -> int;
 
 
  private:
@@ -67,5 +73,7 @@ class BPlusTreeLeafPage : public BPlusTreePage {
 
   // internal methods
   void CopyNFrom(MappingType *items, int size);
+  void CopyLastFrom(const MappingType &item);
+  void CopyFirstFrom(const MappingType &item);
 };
 }  // namespace bustub

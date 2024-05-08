@@ -92,6 +92,17 @@ class BPlusTree {
 
   template <typename N>
   auto Split(N *node) -> N *; //用来分裂
+  template <typename N>
+  auto CoalesceOrRedistribute(N *node, Transaction *transaction) -> bool; //判断删除kv后, 是否需要重建
+  template <typename N>
+  auto Coalesce(N *neighbor_node, N *node, BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *parent, int index,
+                Transaction *transaction = nullptr) -> bool;
+
+  template <typename N>
+  void Redistribute(N *neighbor_node, N *node, BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *parent,
+                    int index, bool from_prev);
+
+  auto AdjustRoot(BPlusTreePage *node) -> bool;
 
   // member variable
   std::string index_name_;

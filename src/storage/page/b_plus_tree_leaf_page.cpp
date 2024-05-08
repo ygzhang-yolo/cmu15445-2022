@@ -43,42 +43,42 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id, in
  */
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &value, const KeyComparator &keyComparator) -> int {
-  // auto index = this->KeyIndex(key, keyComparator);
-  // // 1. 如果key已经存在, 直接返回
-  // if(keyComparator(this->array_[index].first, key) == 0) {
-  //   return this->GetSize();
+  auto index = this->KeyIndex(key, keyComparator);
+  // 1. 如果key已经存在, 直接返回
+  if(keyComparator(this->array_[index].first, key) == 0) {
+    return this->GetSize();
+  }
+  // 2. 否则插入对应的位置, 先通过move_backward统一向后移动一位, 空出的位置放新的kv;
+  std::move_backward(array_+index, array_ +GetSize(),array_+GetSize()+1);
+  this->SetArrayPage(index, key, value);
+  this->IncreaseSize(1);
+  return this->GetSize();
+  // auto index = KeyIndex(key, keyComparator);
+  // // 2.
+  // if (index == GetSize()) {
+  //   *(array_ + index) = {key, value};
+  //   IncreaseSize(1);
+  //   return GetSize();
   // }
-  // // 2. 否则插入对应的位置, 先通过move_backward统一向后移动一位, 空出的位置放新的kv;
-  // std::move_backward(array_+index, array_ +GetSize(),array_+GetSize()+1);
-  // this->SetArrayPage(index, key, value);
-  // this->IncreaseSize(1);
-  // return this->GetSize();
-  auto index = KeyIndex(key, keyComparator);
-  // 2.
-  if (index == GetSize()) {
-    *(array_ + index) = {key, value};
-    IncreaseSize(1);
-    return GetSize();
-  }
-  // 1.
-  if (keyComparator(array_[index].first, key) == 0) {
-    return GetSize();
-  }
-  // 3.
-  std::move_backward(array_ + index, array_ + GetSize(), array_ + GetSize() + 1);
-  *(array_ + index) = {key, value};
-  IncreaseSize(1);
-  return GetSize();
+  // // 1.
+  // if (keyComparator(array_[index].first, key) == 0) {
+  //   return GetSize();
+  // }
+  // // 3.
+  // std::move_backward(array_ + index, array_ + GetSize(), array_ + GetSize() + 1);
+  // *(array_ + index) = {key, value};
+  // IncreaseSize(1);
+  // return GetSize();
 }
 
-/*
+/*`
   * Loopup: 查找key所在的节点
 */
 INDEX_TEMPLATE_ARGUMENTS
 auto B_PLUS_TREE_LEAF_PAGE_TYPE::Lookup(const KeyType &key, ValueType *value, const KeyComparator &keyComparator) const
     -> bool {
   int index = KeyIndex(key, keyComparator);
-  if (index == GetSize() || keyComparator(array_[index].first, key) != 0) {
+  if (index == GetSize() || keyComparator(array_[index].first, key) != 0) {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
     return false;
   }
   *value = array_[index].second;
@@ -129,7 +129,17 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::SetArrayPage(int index, const KeyType &key, con
   *(this->array_+index) = {key,value};
 }
 
+/**
+ * Helper methods to set/get array item
+ * set/get this->array[index]的方法, 通过index访问
+ */
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::GetItem(int index) -> const std::pair<KeyType, ValueType> & {
+    return array_[index];
+}
+
 /*
+  * MoveHalfTo: 将node的一半挪到recipient node中
 */
 INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveHalfTo(BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *recipient) {
@@ -137,6 +147,58 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveHalfTo(BPlusTreeLeafPage<KeyType, ValueType
   int size = GetSize() - split_start_index;
   SetSize(split_start_index);
   recipient->CopyNFrom(array_ + split_start_index, size);
+}
+
+/*
+  * MoveFirstToEndof: 将node的first移动到recipient node的last
+*/
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveFirstToEndOf(BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *recipient) {
+  auto source_first_item = GetItem(0);
+  std::move(array_+1,array_+GetSize(),array_);
+  IncreaseSize(-1);
+  recipient->CopyLastFrom(source_first_item);
+}
+/*
+  * MoveLastToEndof: 将node的last移动到recipient node的first
+*/
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveLastToFrontOf(BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *recipient) {
+  auto source_last_item = array_[GetSize()-1];
+  IncreaseSize(-1);
+  recipient->CopyFirstFrom(source_last_item);
+}
+/*
+  * MoveLastToEndof: 将node的kv全部移到其他page里
+*/
+/*
+ * -> 与internal不同的是，这里K与V是一一对应的，第一个Key也不为空
+ * -> 多了一个指向下一个叶list(页)的值:next page id
+ * 由于是本页的KV加到其他页后，所以其他页的next_page_id要更新为本页的！
+ * */
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_LEAF_PAGE_TYPE::MoveAllTo(BPlusTreeLeafPage<KeyType, ValueType, KeyComparator> *recipient) {
+    recipient->CopyNFrom(array_,GetSize());
+    recipient->SetNextPageId(GetNextPageId());
+    SetSize(0);
+}
+
+
+
+
+
+/*
+  * RemoveAndDeleteRecord: leaf node中删除key的record
+*/
+INDEX_TEMPLATE_ARGUMENTS
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::RemoveAndDeleteRecord(const KeyType &key, const KeyComparator &keyComparator) -> int {
+    int index = KeyIndex(key,keyComparator);
+    if(index == GetSize() || keyComparator(array_[index].first,key) != 0){
+      return GetSize();
+    }
+    std::move(array_+index+1,array_+GetSize(),array_+index);
+    IncreaseSize(-1);
+    return GetSize();
 }
 
 //================================private的内部方法=====================================//
@@ -147,6 +209,23 @@ INDEX_TEMPLATE_ARGUMENTS
 void B_PLUS_TREE_LEAF_PAGE_TYPE::CopyNFrom(std::pair<KeyType, ValueType> *items, int size) {
     std::copy(items,items+size,array_+GetSize());
     IncreaseSize(size);
+}
+/*
+  * CopyFirstFrom: 在node->array的first插入一个item
+*/
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_LEAF_PAGE_TYPE::CopyFirstFrom(const std::pair<KeyType, ValueType> &item) {
+  std::move_backward(array_,array_+ GetSize(),array_+GetSize()+1);
+  *array_ = item;
+  IncreaseSize(1);
+}
+/*
+  * CopyLastFrom: 在node->array的last插入一个item
+*/
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_LEAF_PAGE_TYPE::CopyLastFrom(const std::pair<KeyType, ValueType> &item) {
+  *(array_ + GetSize()) = item;
+  IncreaseSize(1);
 }
 
 template class BPlusTreeLeafPage<GenericKey<4>, RID, GenericComparator<4>>;

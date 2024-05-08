@@ -118,7 +118,50 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveHalfTo(BPlusTreeInternalPage<KeyType, V
   // recipient->CopyNFrom(array_ + start_split_indx, original_size - start_split_indx, bufferPoolManager);
 }
 /*
- * 生成新的根节点叶面
+  * MoveFirstToEndOf: 将node的first插入到recipient的last
+*/
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveFirstToEndOf(BPlusTreeInternalPage *recipient, const KeyType &middle_key,
+                                                      BufferPoolManager *buffer_pool_manager) {
+  SetKeyAt(0, middle_key);
+  auto first_item = array_[0];
+  recipient->CopyLastFrom(first_item, buffer_pool_manager);
+
+  std::move(array_ + 1, array_ + GetSize(), array_);
+  IncreaseSize(-1);
+}
+/*
+  * MoveLastToFrontOf: 将node的last插入到recipient的first
+*/
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveLastToFrontOf(BPlusTreeInternalPage *recipient, const KeyType &middle_key,
+                                                       BufferPoolManager *buffer_pool_manager) {
+  auto last_item = array_[GetSize() - 1];
+  recipient->SetKeyAt(0, middle_key);
+  recipient->CopyFirstFrom(last_item, buffer_pool_manager);
+
+  IncreaseSize(-1);
+}
+/*
+  * MoveAllTo: 将此时页中的所有KV对移到另一个页中
+*/
+/*
+ * 用于size < MinSize 时，合并入其他页
+ * 将自己整个迁移过去，而原本自己的第一个KV对是<null,V0>，所以
+ * 1. 要将自己第一个K0补上，也就是应该是目标页的最后一个K(如果不超MaxSize)；
+ * 2. 最后迁移过去后，
+ * 3. 不要忘记将源页size设置为0
+ * recipient：其他页  middleKey：目标页的最后一个K
+ * */
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::MoveAllTo(BPlusTreeInternalPage<KeyType, ValueType, KeyComparator> *recipient, const KeyType &middleKey, BufferPoolManager *bufferPoolManager) {
+  SetKeyAt(0,middleKey);
+  recipient->CopyNFrom(array_,GetSize(),bufferPoolManager);
+  SetSize(0);
+}
+
+/*
+ * PopulateNewRoot: 生成新的根节点叶面
  * 用于根节点页面分裂，此时要开辟一个新的页作为新root，新root中有两个KV对(1个key)
  * K  null | key1(newKey)
  * V  oldV | newV
@@ -149,6 +192,23 @@ auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::InsertNodeAfter(const ValueType &oldValue, 
   return GetSize();
 }
 
+/*
+  * Remove: 删除page中索引为index位置的kv
+*/
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::Remove(int index) {
+  std::move(array_+index+1,array_ + GetSize(),array_+index);
+  IncreaseSize(-1);
+}
+
+// INDEX_TEMPLATE_ARGUMENTS
+// auto B_PLUS_TREE_INTERNAL_PAGE_TYPE::RemoveAndReturnOnlyChild() -> ValueType {
+//   ValueType onlyValue = ValueAt(0);
+//   SetSize(0);
+//   return onlyValue;
+// }
+
+
 //============================private: 内部辅助函数============================//
 /*
  * 一般用于将某一段(可能是长度不够MinSize 可能是长度超过MaxSize)复制到另一个internal的页中
@@ -168,12 +228,39 @@ void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyNFrom(std::pair<KeyType, ValueType> *it
     // 获得V对应的页
     auto page = bufferPoolManager->FetchPage((items+i)->second); // 当然也可以是ValueIndex(i + GetSize())
     // 将其data转为BPlusTreePage类型，才能设置parent page id
-    auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());-
+    auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
     node->SetParentPageId(GetPageId());
     // 解除固定，告诉Buffer pool现在是脏页(不立即写回)
     bufferPoolManager->UnpinPage(page->GetPageId(),true);
   }
   IncreaseSize(size);
+}
+/*
+  * CopyLastFrom: 将pair插入node的last
+*/
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyLastFrom(const MappingType &pair, BufferPoolManager *buffer_pool_manager) {
+  *(array_ + GetSize()) = pair;
+  IncreaseSize(1);
+
+  auto page = buffer_pool_manager->FetchPage(pair.second);
+  auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+  node->SetParentPageId(GetPageId());
+  buffer_pool_manager->UnpinPage(page->GetPageId(), true);
+}
+/*
+  * CopyFirstFrom: 将pair插入node的first
+*/
+INDEX_TEMPLATE_ARGUMENTS
+void B_PLUS_TREE_INTERNAL_PAGE_TYPE::CopyFirstFrom(const MappingType &pair, BufferPoolManager *buffer_pool_manager) {
+  std::move_backward(array_, array_ + GetSize(), array_ + GetSize() + 1);
+  *array_ = pair;
+  IncreaseSize(1);
+
+  auto page = buffer_pool_manager->FetchPage(pair.second);
+  auto *node = reinterpret_cast<BPlusTreePage *>(page->GetData());
+  node->SetParentPageId(GetPageId());
+  buffer_pool_manager->UnpinPage(page->GetPageId(), true);
 }
 
 

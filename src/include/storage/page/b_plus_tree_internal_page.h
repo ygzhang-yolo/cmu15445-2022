@@ -49,10 +49,15 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   auto Lookup(const KeyType &key, const KeyComparator &comparator) const -> ValueType;  //查找Key所在的子树
   void PopulateNewRoot(const ValueType &oldValue, const KeyType &newKey, const ValueType &newValue);
   auto InsertNodeAfter(const ValueType &oldValue, const KeyType &newKey, const ValueType &newValue) -> int;
+  void Remove(int index);
+  // auto RemoveAndReturnOnlyChild() -> ValueType;
 
- 
   void MoveHalfTo(BPlusTreeInternalPage *recipient, BufferPoolManager *bufferPoolManager);
-
+  void MoveFirstToEndOf(BPlusTreeInternalPage *recipient, const KeyType &middleKey,
+                        BufferPoolManager *bufferPoolManager);
+  void MoveLastToFrontOf(BPlusTreeInternalPage *recipient, const KeyType &middleKey,
+                         BufferPoolManager *bufferPoolManager);
+  void MoveAllTo(BPlusTreeInternalPage *recipient, const KeyType &middleKey, BufferPoolManager *bufferPoolManager);
 
  private:
   // Flexible array member for page data.
@@ -60,6 +65,7 @@ class BPlusTreeInternalPage : public BPlusTreePage {
 
   // internal method, 内部辅助方法
   void CopyNFrom(MappingType *items, int size, BufferPoolManager *bufferPoolManager);
-
+  void CopyLastFrom(const MappingType &pair, BufferPoolManager *bufferPoolManager);
+  void CopyFirstFrom(const MappingType &pair, BufferPoolManager *bufferPoolManager);
 };
 }  // namespace bustub
