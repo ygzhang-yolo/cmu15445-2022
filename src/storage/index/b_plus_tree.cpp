@@ -117,7 +117,16 @@ void BPLUSTREE_TYPE::Remove(const KeyType &key, Transaction *transaction) {
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE {
+  // 1. 空树返回空迭代器
+  if (root_page_id_ == INVALID_PAGE_ID) {
+    return INDEXITERATOR_TYPE(nullptr, nullptr);
+  }
+  // 2. 传入空, 找到第一个leaf page
+  auto leftmost_page = InterFindLeaf(KeyType(), Operation::SEARCH, nullptr, true);
+  // 3. 返回第一个leaf page的index = 0
+  return INDEXITERATOR_TYPE(buffer_pool_manager_, leftmost_page, 0);
+}
 
 /*
  * Input parameter is low key, find the leaf page that contains the input key
@@ -125,7 +134,18 @@ auto BPLUSTREE_TYPE::Begin() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE()
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE {
+  // 1. 空树返回空迭代器
+  if (root_page_id_ == INVALID_PAGE_ID) {
+    return INDEXITERATOR_TYPE(nullptr, nullptr);
+  }
+  // 2. 传入leftMost, 找到第一个leaf page
+  auto leaf_page = InterFindLeaf(key, Operation::SEARCH);
+  auto *leaf_node = reinterpret_cast<LeafPage *>(leaf_page->GetData());
+  // 3. 找到key开头的index返回
+  auto idx = leaf_node->KeyIndex(key, comparator_);
+  return INDEXITERATOR_TYPE(buffer_pool_manager_, leaf_page, idx);
+}
 
 /*
  * Input parameter is void, construct an index iterator representing the end
@@ -133,7 +153,16 @@ auto BPLUSTREE_TYPE::Begin(const KeyType &key) -> INDEXITERATOR_TYPE { return IN
  * @return : index iterator
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE { return INDEXITERATOR_TYPE(); }
+auto BPLUSTREE_TYPE::End() -> INDEXITERATOR_TYPE {
+  // 1. 空树返回空迭代器
+  if (root_page_id_ == INVALID_PAGE_ID) {
+    return INDEXITERATOR_TYPE(nullptr, nullptr);
+  }
+  // 2. 传入rightMost返回最后一个leaf page
+  auto rightmost_page = InterFindLeaf(KeyType(), Operation::SEARCH, nullptr, false, true);
+  auto *leaf_node = reinterpret_cast<LeafPage *>(rightmost_page->GetData());
+  return INDEXITERATOR_TYPE(buffer_pool_manager_, rightmost_page, leaf_node->GetSize());
+}
 
 /**
  * @return Page id of the root of this tree
@@ -468,6 +497,7 @@ void BPLUSTREE_TYPE::InterInsertParent(BPlusTreePage *old_node, const KeyType &k
 /*
   * Internal FindLeaf: 查找key所在的叶子节点 
   * 本质上就是个链表的DFS, 按照key一路查下去即可
+  * leftMost=true代表要获得左侧第一个 left page, rightMost=true代表要获得右侧最后一个leaf page;
 */
 INDEX_TEMPLATE_ARGUMENTS
 auto BPLUSTREE_TYPE::InterFindLeaf(const KeyType &key, Operation operation, Transaction *transaction, bool leftMost, bool rightMost) -> Page * {
@@ -481,15 +511,14 @@ auto BPLUSTREE_TYPE::InterFindLeaf(const KeyType &key, Operation operation, Tran
     // 2.1 按照key的有序, 寻找下一层的leaf node
     auto *internal_node = reinterpret_cast<InternalPage *>(node);
     page_id_t child_page_id = 0;
-    // TODO(ubuntu): 这里的leftMost和rightMost是没什么意义的
-    // if(leftMost) {
-    //   child_page_id = internal_node->ValueAt(0);
-    // }else if(rightMost) {
-    //   child_page_id = internal_node->ValueAt(internal_node->GetSize() - 1);
-    // }else {
-    //   child_page_id = internal_node->Lookup(key, comparator_);
-    // }
-    child_page_id = internal_node->Lookup(key, comparator_);
+    // NOTE: leftMost=true是begin()函数会使用的, 获取第一个leaf page;
+    if(leftMost) {
+      child_page_id = internal_node->ValueAt(0);
+    }else if(rightMost) {
+      child_page_id = internal_node->ValueAt(internal_node->GetSize() - 1);
+    }else {
+      child_page_id = internal_node->Lookup(key, comparator_);
+    }
     // LOG_DEBUG("child_page_id : %d", child_page_id);
     assert(child_page_id > 0);
     // 2.2 node = next leaf node, 切换到下一层, 继续查找
