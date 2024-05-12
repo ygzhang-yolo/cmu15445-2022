@@ -45,14 +45,35 @@ class BPlusTreeLeafPage : public BPlusTreePage {
   // After creating a new leaf page from buffer pool, must call initialize
   // method to set default values
   void Init(page_id_t page_id, page_id_t parent_id = INVALID_PAGE_ID, int max_size = LEAF_PAGE_SIZE);
+  auto Insert(const KeyType &key, const ValueType &value, const KeyComparator &keyComparator) -> int;
+  auto Lookup(const KeyType &key, ValueType *value, const KeyComparator &keyComparator) const -> bool;
+
+
   // helper methods
   auto GetNextPageId() const -> page_id_t;
   void SetNextPageId(page_id_t next_page_id);
+  auto GetArrayPage(int index) const -> MappingType;
+  void SetArrayPage(int index, const KeyType &key, const ValueType &value);
   auto KeyAt(int index) const -> KeyType;
+  auto KeyIndex(const KeyType &key, const KeyComparator &comparator) const -> int;  //查找key在页中的index
+  auto GetItem(int index) -> const MappingType &;
+
+  void MoveHalfTo(BPlusTreeLeafPage *recipient);
+  void MoveFirstToEndOf(BPlusTreeLeafPage *recipient);
+  void MoveLastToFrontOf(BPlusTreeLeafPage *recipient);
+  void MoveAllTo(BPlusTreeLeafPage *recipient);
+
+  auto RemoveAndDeleteRecord(const KeyType &key, const KeyComparator &keyComparator) -> int;
+
 
  private:
   page_id_t next_page_id_;
   // Flexible array member for page data.
   MappingType array_[1];
+
+  // internal methods
+  void CopyNFrom(MappingType *items, int size);
+  void CopyLastFrom(const MappingType &item);
+  void CopyFirstFrom(const MappingType &item);
 };
 }  // namespace bustub

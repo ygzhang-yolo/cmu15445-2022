@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "common/rwlatch.h"
 #include "concurrency/transaction.h"
 #include "storage/index/index_iterator.h"
 #include "storage/page/b_plus_tree_internal_page.h"
@@ -22,6 +23,7 @@
 namespace bustub {
 
 #define BPLUSTREE_TYPE BPlusTree<KeyType, ValueType, KeyComparator>
+enum class Operation { SEARCH, INSERT, DELETE };
 
 /**
  * Main class providing the API for the Interactive B+ Tree.
@@ -81,6 +83,29 @@ class BPlusTree {
   void ToGraph(BPlusTreePage *page, BufferPoolManager *bpm, std::ofstream &out) const;
 
   void ToString(BPlusTreePage *page, BufferPoolManager *bpm) const;
+  
+  /*自定义的内部功能函数, 用来实现各种功能*/
+  void InterStartNewTree(const KeyType &key, const ValueType &value);
+  auto InterInsertLeaf(const KeyType &key, const ValueType &value, Transaction *transaction) -> bool;
+  void InterInsertParent(BPlusTreePage *old_node, const KeyType &key, BPlusTreePage *new_node, Transaction *transaction);
+  auto InterFindLeaf(const KeyType &key, Operation operation, Transaction *transaction = nullptr, bool leftMost = false,
+                bool rightMost = false) -> Page *;
+
+  template <typename N>
+  auto Split(N *node) -> N *; //用来分裂
+  template <typename N>
+  auto CoalesceOrRedistribute(N *node, Transaction *transaction) -> bool; //判断删除kv后, 是否需要重建
+  template <typename N>
+  auto Coalesce(N *neighbor_node, N *node, BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *parent, int index,
+                Transaction *transaction = nullptr) -> bool;
+
+  template <typename N>
+  void Redistribute(N *neighbor_node, N *node, BPlusTreeInternalPage<KeyType, page_id_t, KeyComparator> *parent,
+                    int index, bool from_prev);
+
+  auto AdjustRoot(BPlusTreePage *node) -> bool;
+
+  void ReleaseLatchFromQueue(Transaction *transaction);
 
   // member variable
   std::string index_name_;
@@ -89,6 +114,7 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  ReaderWriterLatch root_page_id_latch_;  //新增的root_page_id latch
 };
 
 }  // namespace bustub
