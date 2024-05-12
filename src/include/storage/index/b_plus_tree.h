@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "common/rwlatch.h"
 #include "concurrency/transaction.h"
 #include "storage/index/index_iterator.h"
 #include "storage/page/b_plus_tree_internal_page.h"
@@ -104,6 +105,8 @@ class BPlusTree {
 
   auto AdjustRoot(BPlusTreePage *node) -> bool;
 
+  void ReleaseLatchFromQueue(Transaction *transaction);
+
   // member variable
   std::string index_name_;
   page_id_t root_page_id_;
@@ -111,6 +114,7 @@ class BPlusTree {
   KeyComparator comparator_;
   int leaf_max_size_;
   int internal_max_size_;
+  ReaderWriterLatch root_page_id_latch_;  //新增的root_page_id latch
 };
 
 }  // namespace bustub

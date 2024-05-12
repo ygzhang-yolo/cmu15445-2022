@@ -26,6 +26,7 @@ INDEXITERATOR_TYPE::IndexIterator(BufferPoolManager *bpm, Page *page, int index)
 INDEX_TEMPLATE_ARGUMENTS
 INDEXITERATOR_TYPE::~IndexIterator() {
   if (page_ != nullptr) {
+    page_->RUnlatch();  // 只是查找，上的读锁，释放读锁，下面的UnPin也是false
     buffer_pool_manager_->UnpinPage(page_->GetPageId(), false);
   }
 }
@@ -52,6 +53,8 @@ auto INDEXITERATOR_TYPE::operator++() -> INDEXITERATOR_TYPE & {
   if (index_ == leaf_->GetSize() - 1 && leaf_->GetNextPageId() != INVALID_PAGE_ID) {
     // 1. index为当前page的末尾, 但还有下一个page, 切换到下一个page的第一个
     auto next_page = buffer_pool_manager_->FetchPage(leaf_->GetNextPageId());
+    next_page->RLatch();
+    page_->RUnlatch();
     buffer_pool_manager_->UnpinPage(page_->GetPageId(), false);
 
     page_ = next_page;
