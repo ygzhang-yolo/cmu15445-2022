@@ -30,20 +30,20 @@ void InsertExecutor::Init() {
 }
 
 auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
-    // is_end = return
+    // is_end = return, 感觉像一个幂等去重的
     if(is_end_) {
         return false;
     }
-    //
+
     Tuple to_insert_tuple{};
     RID emit_rid;
     int32_t insert_count = 0;
     // 
     while(child_executor_->Next(&to_insert_tuple, &emit_rid)) {
+        // InsertTuple: 将tuple插入到对应的page中
         bool inserted = table_info_->table_->InsertTuple(to_insert_tuple, rid, exec_ctx_->GetTransaction());
-
         if (inserted) {
-          // 更新索引, 从tuple中提取出适合索引的key, 在索引上插入新的kv标识符
+          // 插入成功则更新索引, InsertEntry将新key插入到table的所有索引中
           std::for_each(
               table_indexes_.begin(), table_indexes_.end(),
               [&to_insert_tuple, &rid, &table_info = table_info_, &exec_ctx = exec_ctx_](IndexInfo *index) {
@@ -54,10 +54,10 @@ auto InsertExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
           insert_count++;
         }
     }
+    // 返回一个tuple, 包含了一个integer表示table中有多少行受到了影响
     std::vector<Value> values{};
     values.reserve(GetOutputSchema().GetColumnCount());
     values.emplace_back(TypeId::INTEGER, insert_count);
-    // tuple
     *tuple = Tuple{values, &GetOutputSchema()};
     is_end_ = true;
     return true;

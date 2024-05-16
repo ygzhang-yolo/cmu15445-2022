@@ -55,7 +55,7 @@ class SeqScanExecutor : public AbstractExecutor {
   const SeqScanPlanNode *plan_;
 
   // 需要增加的成员变量
-  TableIterator table_iter_ = {nullptr, RID(), nullptr};
-  const TableInfo *table_info_;
+  TableIterator table_iter_ = {nullptr, RID(), nullptr};  //
+  const TableInfo *table_info_;   // 当前操作的table的信息info
 };
 }  // namespace bustub
