@@ -15,6 +15,7 @@
 #include <memory>
 #include <utility>
 
+#include "catalog/catalog.h"
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
 #include "execution/plans/insert_plan.h"
@@ -57,6 +58,11 @@ class InsertExecutor : public AbstractExecutor {
  private:
   /** The insert plan node to be executed*/
   const InsertPlanNode *plan_;
+  // 新增的成员变量
+  const TableInfo *table_info_;                       // 表的元数据
+  std::unique_ptr<AbstractExecutor> child_executor_;  // 子执行器
+  std::vector<IndexInfo *> table_indexes_;            // 要插入的表上的每个索引的IndexInfo*向量
+  bool is_end_{false};                                // 是否已经是end了
 };
 
 }  // namespace bustub

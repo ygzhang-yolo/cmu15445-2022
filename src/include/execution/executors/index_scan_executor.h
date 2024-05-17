@@ -44,5 +44,12 @@ class IndexScanExecutor : public AbstractExecutor {
  private:
   /** The index scan plan node to be executed. */
   const IndexScanPlanNode *plan_;
+  // 新增的成员
+  const IndexInfo *index_info_;                     // index信息
+  const TableInfo *table_info_;                     // table信息
+  BPlusTreeIndexForOneIntegerColumn *tree_;         // B+树索引
+  BPlusTreeIndexIteratorForOneIntegerColumn iter_;  // B+树迭代器
+  std::vector<RID> rids_;                           // rid, 非聚簇索引, 需要拿着rid去回表
+  std::vector<RID>::const_iterator rid_iter_{};     // rid迭代器
 };
 }  // namespace bustub

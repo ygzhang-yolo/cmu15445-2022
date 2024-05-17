@@ -18,10 +18,12 @@
 #include <utility>
 #include <vector>
 
+#include "catalog/catalog.h"
 #include "execution/executor_context.h"
 #include "execution/executors/abstract_executor.h"
 #include "execution/expressions/abstract_expression.h"
 #include "execution/plans/nested_index_join_plan.h"
+#include "storage/index/b_plus_tree_index.h"
 #include "storage/table/tmp_tuple.h"
 #include "storage/table/tuple.h"
 
@@ -50,5 +52,10 @@ class NestIndexJoinExecutor : public AbstractExecutor {
  private:
   /** The nested index join plan node. */
   const NestedIndexJoinPlanNode *plan_;
+  /* 新增 Member */
+  std::unique_ptr<AbstractExecutor> child_;
+  const IndexInfo *index_info_;
+  const TableInfo *table_info_;
+  BPlusTreeIndexForOneIntegerColumn *tree_;
 };
 }  // namespace bustub

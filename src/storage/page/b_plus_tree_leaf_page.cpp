@@ -42,33 +42,34 @@ void B_PLUS_TREE_LEAF_PAGE_TYPE::Init(page_id_t page_id, page_id_t parent_id, in
  * Insert: 插入一个kv到page中, 返回插入后page中的kv数量
  */
 INDEX_TEMPLATE_ARGUMENTS
-auto B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &value, const KeyComparator &keyComparator) -> int {
-  auto index = this->KeyIndex(key, keyComparator);
-  // 1. 如果key已经存在, 直接返回
-  if(keyComparator(this->array_[index].first, key) == 0) {
-    return this->GetSize();
+auto B_PLUS_TREE_LEAF_PAGE_TYPE::Insert(const KeyType &key, const ValueType &value, const KeyComparator &keyComparator)
+    -> int {
+  // auto index = this->KeyIndex(key, keyComparator);
+  // // 1. 如果key已经存在, 直接返回
+  // if(keyComparator(this->array_[index].first, key) == 0) {
+  //   return this->GetSize();
+  // }
+  // // 2. 否则插入对应的位置, 先通过move_backward统一向后移动一位, 空出的位置放新的kv;
+  // std::move_backward(array_+index, array_ +GetSize(),array_+GetSize()+1);
+  // this->SetArrayPage(index, key, value);
+  // this->IncreaseSize(1);
+  // return this->GetSize();
+  auto distance_in_array = KeyIndex(key, keyComparator);
+  if (distance_in_array == GetSize()) {
+    *(array_ + distance_in_array) = {key, value};
+    IncreaseSize(1);
+    return GetSize();
   }
-  // 2. 否则插入对应的位置, 先通过move_backward统一向后移动一位, 空出的位置放新的kv;
-  std::move_backward(array_+index, array_ +GetSize(),array_+GetSize()+1);
-  this->SetArrayPage(index, key, value);
-  this->IncreaseSize(1);
-  return this->GetSize();
-  // auto index = KeyIndex(key, keyComparator);
-  // // 2.
-  // if (index == GetSize()) {
-  //   *(array_ + index) = {key, value};
-  //   IncreaseSize(1);
-  //   return GetSize();
-  // }
-  // // 1.
-  // if (keyComparator(array_[index].first, key) == 0) {
-  //   return GetSize();
-  // }
-  // // 3.
-  // std::move_backward(array_ + index, array_ + GetSize(), array_ + GetSize() + 1);
-  // *(array_ + index) = {key, value};
-  // IncreaseSize(1);
-  // return GetSize();
+
+  if (keyComparator(array_[distance_in_array].first, key) == 0) {
+    return GetSize();
+  }
+
+  std::move_backward(array_ + distance_in_array, array_ + GetSize(), array_ + GetSize() + 1);
+  *(array_ + distance_in_array) = {key, value};
+
+  IncreaseSize(1);
+  return GetSize();
 }
 
 /*`
