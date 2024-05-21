@@ -376,6 +376,13 @@ class LockManager {
     row_lock_set->second.erase(rid);
   }
 
+  /* Task 1: Deadlock Detection Methods: */
+  /* Dfs: 利用DFS遍历图中所有边, 判断是否有环 */
+  auto Dfs(txn_id_t txn_id) -> bool;
+  /* DeleteNode: 删除等待图中txn_id对应的节点 */
+  auto DeleteNode(txn_id_t txn_id) -> void; 
+
+
  private:
   /** Fall 2022 */
   /** Structure that holds lock requests for a given table oid */
@@ -391,14 +398,14 @@ class LockManager {
   std::atomic<bool> enable_cycle_detection_;
   std::thread *cycle_detection_thread_;
   /** Waits-for graph representation. */
-  std::unordered_map<txn_id_t, std::vector<txn_id_t>> waits_for_;
+  std::unordered_map<txn_id_t, std::vector<txn_id_t>> waits_for_;   // 事务的等待图
   std::mutex waits_for_latch_;
   /* 新增 */
-  std::set<txn_id_t> safe_set_;
-  std::set<txn_id_t> txn_set_;
-  std::unordered_set<txn_id_t> active_set_;
+  std::set<txn_id_t> safe_set_;             // 用于去重的set, 类似于dfs中的used
+  std::set<txn_id_t> txn_set_;              // 事务的集合
+  std::unordered_set<txn_id_t> active_set_; // DFS过程中存储环上的txn_id Set
 
-  std::unordered_set<txn_id_t, RID> map_txn_rid_;
+  std::unordered_map<txn_id_t, RID> map_txn_rid_;
   std::unordered_map<txn_id_t, table_oid_t> map_txn_oid_;
 };
 

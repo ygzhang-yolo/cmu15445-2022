@@ -17,6 +17,7 @@
 #include "concurrency/transaction_manager.h"
 
 namespace bustub {
+// ====================== Task1: Lock Manager ==========================//
 /*
 * LockTable: 获取表级锁
 */
@@ -423,21 +424,137 @@ auto LockManager::UnlockRow(Transaction *txn, const table_oid_t &oid, const RID 
   throw bustub::TransactionAbortException(txn->GetTransactionId(), AbortReason::ATTEMPTED_UNLOCK_BUT_NO_LOCK_HELD);
 }
 
-void LockManager::AddEdge(txn_id_t t1, txn_id_t t2) {}
-
-void LockManager::RemoveEdge(txn_id_t t1, txn_id_t t2) {}
-
-auto LockManager::HasCycle(txn_id_t *txn_id) -> bool { return false; }
-
-auto LockManager::GetEdgeList() -> std::vector<std::pair<txn_id_t, txn_id_t>> {
-  std::vector<std::pair<txn_id_t, txn_id_t>> edges(0);
-  return edges;
+//======================= Task2: Deadlock Detection ====================// 
+/*
+* AddEdge: 在图中添加一条从t1到t2的边, 如果已存在不需要执行任何操作
+*/
+void LockManager::AddEdge(txn_id_t t1, txn_id_t t2) {
+  this->txn_set_.insert(t1);
+  this->txn_set_.insert(t2);
+  waits_for_[t1].push_back(t2);
 }
-
+/*
+* RemoveEdge: 从图中删除t1到t2的边, 如果不存在则不需要执行任何操作
+*/
+void LockManager::RemoveEdge(txn_id_t t1, txn_id_t t2) {
+  // 1. 在事务t1的等待图waits_for_中查找t1->t2的边
+  auto iter = std::find(waits_for_[t1].begin(), waits_for_[t1].end(), t2);
+  // 2. 如果边存在, 从图中删除; 不存在则不需要执行任何操作
+  if(iter != waits_for_[t1].end()) {
+    waits_for_[t1].erase(iter);
+  }
+}
+/*
+* HasCycle: DFS检查是否有环, 如果找得到环将最新的TX ID存储在txn_id中返回true;
+*/
+auto LockManager::HasCycle(txn_id_t *txn_id) -> bool {
+  // 遍历所有事务集合, 以所有事务作起点进行Dfs
+  for (auto const &start_txn_id : txn_set_) {
+    if (Dfs(start_txn_id)) {
+      // 如果有环, 则需要找出环的路径上, txn_id最大的事务返回
+      *txn_id = *active_set_.begin();
+      for (auto const &active_txn_id : active_set_) {
+        *txn_id = std::max(*txn_id, active_txn_id);
+      }
+      active_set_.clear();
+      return true;
+    }
+    active_set_.clear();  // 每次dfs之前都需要清空active_set
+  }
+  return false;
+}
+/*
+* GetEdgeList: 返回图中所有边的列表
+*/
+auto LockManager::GetEdgeList() -> std::vector<std::pair<txn_id_t, txn_id_t>> {
+  // 遍历waits_for中的所有pair, 返回所有t1->t2
+  std::vector<std::pair<txn_id_t, txn_id_t>> result;
+  for(auto const &pair : waits_for_) {
+    auto t1 = pair.first;
+    for(auto const &t2 : pair.second) {
+      result.emplace_back(t1, t2);
+    }
+  }
+  return result;
+}
+/*
+* RunCycleDetection: 后台运行循环死锁检测的框架代码
+*/
 void LockManager::RunCycleDetection() {
+  // 在enable_cycle_detection标志位有效的情况下, 间隔cycle_detection_interval的时间, 进行一轮检测
   while (enable_cycle_detection_) {
     std::this_thread::sleep_for(cycle_detection_interval);
     {  // TODO(students): detect deadlock
+      table_lock_map_latch_.lock();
+      row_lock_map_latch_.lock();   // 事先获取表/行锁的map的latch
+      // 1. 检测表锁请求队列
+      // 1.1 遍历所有表锁请求队列
+      for(auto &pair : table_lock_map_) {
+        std::unordered_set<txn_id_t> granted_set;
+        pair.second->latch_.lock(); //对每个表锁, 先拿锁
+        // 1.1.1 遍历每个表锁的所有lock request
+        for(auto const &lock_request : pair.second->request_queue_) {
+          if(lock_request->granted_) {
+            // 1.1.1.1 如果锁已经授予, 将TX ID添加到granted_set
+            granted_set.emplace(lock_request->txn_id_);
+          }else {
+            // 1.1.1.2 如果锁未被授予, 将该请求添加到等待图, 并未每个已授予的事务添加一条边, 表示该请求在等待这些事务
+            for(auto txn_id : granted_set) {
+              map_txn_oid_.emplace(lock_request->txn_id_, lock_request->oid_);
+              AddEdge(lock_request->txn_id_, txn_id);
+            }
+          }
+        }
+        pair.second->latch_.unlock(); // 最后别忘了释放每个表锁的锁
+      }
+      // 2. 检测行锁请求队列
+      // 2.1 遍历所有行锁请求队列
+      for(auto &pair : row_lock_map_) {
+        std::unordered_set<txn_id_t> granted_set;
+        pair.second->latch_.lock();     //对每个行锁先拿锁
+        // 2.1.1 遍历每个行锁的lock request
+        for(auto const &lock_request : pair.second->request_queue_) {
+          if(lock_request->granted_) {
+            // 2.1.1.1 如果锁已经授予, 将TX ID添加到granted_set
+            granted_set.emplace(lock_request->txn_id_);
+          }else {
+            // 2.1.1.2 如果锁未被授予, 将该请求添加到等待图, 并未每个已授予的事务添加一条边, 表示该请求在等待这些事务
+            for(auto txn_id : granted_set) {
+              map_txn_rid_.emplace(lock_request->txn_id_, lock_request->rid_);
+              AddEdge(lock_request->txn_id_, txn_id);
+            }
+          }
+        }
+        pair.second->latch_.unlock();   //每个行锁记得释放锁
+      }
+      row_lock_map_latch_.unlock();
+      table_lock_map_latch_.unlock(); // 用完了可以释放前面获取的表/行锁的map的锁
+      // 3. 检测并处理死锁
+      txn_id_t txn_id;
+      // 3.1 HasCycle 利用 Dfs 检测是否存在死锁
+      while(HasCycle(&txn_id)) {
+        // 3.1.1 如果存在死锁, 获取txn_id最大(最新)的事务, 将其状态设置为ABORTED, 并删除等待图中的节点
+        Transaction *txn = TransactionManager::GetTransaction(txn_id);
+        txn->SetState(TransactionState::ABORTED);
+        DeleteNode(txn_id);
+        // 3.1.2 释放涉及死锁的事务, 并通知相关锁请求队列
+        if(map_txn_oid_.count(txn_id) > 0) {
+          table_lock_map_[map_txn_oid_[txn_id]]->latch_.lock();
+          table_lock_map_[map_txn_oid_[txn_id]]->cv_.notify_all();
+          table_lock_map_[map_txn_oid_[txn_id]]->latch_.unlock();
+        } 
+        if (map_txn_rid_.count(txn_id) > 0) {
+          row_lock_map_[map_txn_rid_[txn_id]]->latch_.lock();
+          row_lock_map_[map_txn_rid_[txn_id]]->cv_.notify_all();
+          row_lock_map_[map_txn_rid_[txn_id]]->latch_.unlock();
+        }
+      }
+      // 4. 清理临时数据结构, 进行下一次死锁检测
+      waits_for_.clear();
+      safe_set_.clear();
+      txn_set_.clear();
+      map_txn_oid_.clear();
+      map_txn_rid_.clear();
     }
   }
 }
@@ -569,6 +686,41 @@ void LockManager::InsertOrDeleteRowLockSet(Transaction *txn, const std::shared_p
     case LockMode::INTENTION_EXCLUSIVE:
     case LockMode::SHARED_INTENTION_EXCLUSIVE:
       break;
+  }
+}
+
+auto LockManager::Dfs(txn_id_t txn_id) -> bool {
+  // End Condition: 如果是已经遍历的txn_id, 说明都遍历过了, 没有环
+  if (safe_set_.find(txn_id) != safe_set_.end()) {
+    return false;
+  }
+  active_set_.insert(txn_id);
+  // DFS range: 遍历txn_id -> 指向的所有边
+  std::vector<txn_id_t> &next_node_vector = waits_for_[txn_id];
+  std::sort(next_node_vector.begin(), next_node_vector.end());
+  for(txn_id_t const next_node : next_node_vector) {
+    // 如果active_set中已经存在了, 说明出现了环
+    if(active_set_.find(next_node) != active_set_.end()) {
+      return true;
+    }
+    if(Dfs(next_node)) {
+      return true;
+    }
+  }
+
+  active_set_.erase(txn_id);  // 回溯
+  safe_set_.insert(txn_id);
+  return false;
+}
+
+auto LockManager::DeleteNode(txn_id_t txn_id) -> void {
+  // 1. 删掉等待图waits_for_中
+  waits_for_.erase(txn_id);
+  // 2. 调用RemoveEdge在边集中删除所有txn_id为起点的边
+  for(auto a_txn_id : txn_set_) {
+    if(a_txn_id != txn_id) {
+      RemoveEdge(a_txn_id, txn_id);
+    }
   }
 }
 
