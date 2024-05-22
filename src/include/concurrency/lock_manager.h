@@ -17,6 +17,7 @@
 #include <list>
 #include <memory>
 #include <mutex>  // NOLINT
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -35,7 +36,15 @@ class TransactionManager;
  */
 class LockManager {
  public:
+  /* 共享锁、排他锁、意向共享锁、意向排他锁、共享意向排他锁 */
   enum class LockMode { SHARED, EXCLUSIVE, INTENTION_SHARED, INTENTION_EXCLUSIVE, SHARED_INTENTION_EXCLUSIVE };
+  /*
+    共享锁（S） 允许多个事务同时读取，但不允许写入。
+    排他锁（X） 允许一个事务进行读写操作，同时阻止其他事务访问。
+    意向共享锁（IS） 允许在表级别表明打算对某些行进行读操作。
+    意向排他锁（IX） 允许在表级别表明打算对某些行进行写操作。
+    共享意向排他锁（SIX） 允许在表级别进行读取，同时在行级别进行写操作。
+  */
 
   /**
    * Structure to hold a lock request.
@@ -64,10 +73,12 @@ class LockManager {
   class LockRequestQueue {
    public:
     /** List of lock requests for the same resource (table or row) */
-    std::list<LockRequest *> request_queue_;
+    // std::list<LockRequest *> request_queue_;
+    std::list<std::shared_ptr<LockRequest>> request_queue_;
+
     /** For notifying blocked transactions on this rid */
     std::condition_variable cv_;
-    /** txn_id of an upgrading transaction (if any) */
+    /** txn_id of an upgrading transaction (if any) */ /* 正在进行锁升级的 tx id */
     txn_id_t upgrading_ = INVALID_TXN_ID;
     /** coordination */
     std::mutex latch_;
@@ -93,44 +104,67 @@ class LockManager {
    * GENERAL BEHAVIOUR:
    *    Both LockTable() and LockRow() are blocking methods; they should wait till the lock is granted and then return.
    *    If the transaction was aborted in the meantime, do not grant the lock and return false.
+   *    LockTable() 和 LockRow() 都是阻塞方法；它们应等待锁被授予后才返回。
+   *    如果在此期间事务被中止，则不授予锁并返回 false。
    *
    *
    * MULTIPLE TRANSACTIONS:
    *    LockManager should maintain a queue for each resource; locks should be granted to transactions in a FIFO manner.
    *    If there are multiple compatible lock requests, all should be granted at the same time
    *    as long as FIFO is honoured.
+   *    LockManager 应为每个资源维护一个队列；锁应按 FIFO（先入先出）方式授予事务。
+   *    如果有多个兼容的锁请求，只要遵循 FIFO 原则，应同时授予所有请求。
    *
    * SUPPORTED LOCK MODES:
    *    Table locking should support all lock modes.
    *    Row locking should not support Intention locks. Attempting this should set the TransactionState as
    *    ABORTED and throw a TransactionAbortException (ATTEMPTED_INTENTION_LOCK_ON_ROW)
+   *    表锁应该支持所有锁模式
+   *    行锁不应该支持意向锁, 尝试这样做要把事务状态设置为ABORTED 并抛出TransactionAbortException (ATTEMPTED_INTENTION_LOCK_ON_ROW)
    *
    *
    * ISOLATION LEVEL:
    *    Depending on the ISOLATION LEVEL, a transaction should attempt to take locks:
    *    - Only if required, AND
    *    - Only if allowed
+   *    根据隔离级别，事务应尝试获取锁：
+   *    - 仅在需要时，AND
+   *    - 仅在允许时
    *
    *    For instance S/IS/SIX locks are not required under READ_UNCOMMITTED, and any such attempt should set the
    *    TransactionState as ABORTED and throw a TransactionAbortException (LOCK_SHARED_ON_READ_UNCOMMITTED).
+   *    例如，在 READ_UNCOMMITTED 下不需要 S/IS/SIX 锁，任何此类尝试应将事务状态设置为 ABORTED 并抛出 TransactionAbortException (LOCK_SHARED_ON_READ_UNCOMMITTED)。
    *
    *    Similarly, X/IX locks on rows are not allowed if the the Transaction State is SHRINKING, and any such attempt
    *    should set the TransactionState as ABORTED and throw a TransactionAbortException (LOCK_ON_SHRINKING).
+   *    类似地，如果事务状态为 SHRINKING，不允许在行上持有 X/IX 锁，任何此类尝试应将事务状态设置为 ABORTED 并抛出 TransactionAbortException (LOCK_ON_SHRINKING)。
    *
    *    REPEATABLE_READ:
    *        The transaction is required to take all locks.
    *        All locks are allowed in the GROWING state
    *        No locks are allowed in the SHRINKING state
+   *    REPEATABLE_READ:
+   *        事务需要获取所有锁。
+   *        所有锁在 GROWING 状态下都是允许的。
+   *        在 SHRINKING 状态下不允许任何锁。
    *
    *    READ_COMMITTED:
    *        The transaction is required to take all locks.
    *        All locks are allowed in the GROWING state
    *        Only IS, S locks are allowed in the SHRINKING state
+   *    READ_COMMITTED:
+   *        事务需要获取所有锁。
+   *        所有锁在 GROWING 状态下都是允许的。
+   *        在 SHRINKING 状态下只允许 IS, S 锁。
    *
    *    READ_UNCOMMITTED:
    *        The transaction is required to take only IX, X locks.
    *        X, IX locks are allowed in the GROWING state.
    *        S, IS, SIX locks are never allowed
+   *    READ_UNCOMMITTED:
+   *        事务仅需获取 IX, X 锁。
+   *        在 GROWING 状态下允许 X, IX 锁。
+   *        永远不允许 S, IS, SIX 锁。
    *
    *
    * MULTILEVEL LOCKING:
@@ -138,6 +172,8 @@ class LockManager {
    *    belongs to. For instance, if an exclusive lock is attempted on a row, the transaction must hold either
    *    X, IX, or SIX on the table. If such a lock does not exist on the table, Lock() should set the TransactionState
    *    as ABORTED and throw a TransactionAbortException (TABLE_LOCK_NOT_PRESENT)
+   *    在锁定行时，Lock() 应确保事务在该行所属的表上持有适当的锁。例如，如果尝试在行上获取排他锁，事务必须在表上持有 X, IX 或 SIX 锁。
+   *    如果表上不存在此类锁，Lock() 应将事务状态设置为 ABORTED 并抛出 TransactionAbortException (TABLE_LOCK_NOT_PRESENT)。
    *
    *
    * LOCK UPGRADE:
@@ -164,6 +200,7 @@ class LockManager {
    * BOOK KEEPING:
    *    If a lock is granted to a transaction, lock manager should update its
    *    lock sets appropriately (check transaction.h)
+   *    如果授予事务锁，锁管理器应适当更新其锁集合（参见 transaction.h）。
    */
 
   /**
@@ -268,6 +305,7 @@ class LockManager {
 
   /**
    * Adds an edge from t1 -> t2 from waits for graph.
+   * 在图中添加一条从t1到t2的边, 如果已存在不需要执行任何操作
    * @param t1 transaction waiting for a lock
    * @param t2 transaction being waited for
    */
@@ -275,6 +313,7 @@ class LockManager {
 
   /**
    * Removes an edge from t1 -> t2 from waits for graph.
+   * 从图中删除t1到t2的边, 如果不存在则不需要执行任何操作
    * @param t1 transaction waiting for a lock
    * @param t2 transaction being waited for
    */
@@ -282,20 +321,67 @@ class LockManager {
 
   /**
    * Checks if the graph has a cycle, returning the newest transaction ID in the cycle if so.
+   * 用DFS查找循环, 如果找到则将最新的Tx ID存储在txn_id中返回true
    * @param[out] txn_id if the graph has a cycle, will contain the newest transaction ID
    * @return false if the graph has no cycle, otherwise stores the newest transaction ID in the cycle to txn_id
    */
   auto HasCycle(txn_id_t *txn_id) -> bool;
 
   /**
+   * 返回图中所有边的列表
    * @return all edges in current waits_for graph
    */
   auto GetEdgeList() -> std::vector<std::pair<txn_id_t, txn_id_t>>;
 
   /**
    * Runs cycle detection in the background.
+   * 后台运行循环死锁检测的框架代码
    */
   auto RunCycleDetection() -> void;
+
+  /* 新增的Method */
+  /* Task 0: lock manager methods: */
+  /* 判断是否可以授予给定的锁请求 */
+  auto GrantLock(const std::shared_ptr<LockRequest> &lock_request,
+                 const std::shared_ptr<LockRequestQueue> &lock_request_queue) -> bool;
+
+  auto InsertOrDeleteTableLockSet(Transaction *txn, const std::shared_ptr<LockRequest> &lock_request, bool insert)
+      -> void;
+
+  auto InsertOrDeleteRowLockSet(Transaction *txn, const std::shared_ptr<LockRequest> &lock_request, bool insert)
+      -> void;
+  /* InsertRowLockSet: 将行锁添加到锁集合中 */
+  auto InsertRowLockSet(const std::shared_ptr<std::unordered_map<table_oid_t, std::unordered_set<RID>>> &lock_set,
+                        const table_oid_t &oid, const RID &rid) -> void {
+    // 1. 查找表的行锁集合
+    auto row_lock_set = lock_set->find(oid);
+    // 2. 如果找不到则创建一个新的
+    if (row_lock_set == lock_set->end()) {
+      lock_set->emplace(oid, std::unordered_set<RID>{});
+      row_lock_set = lock_set->find(oid);
+    }
+    // 3. 插入行标识RID
+    row_lock_set->second.emplace(rid);
+  }
+  /* DeleteRowLockSet: 将对应行锁从锁集合中删除 */
+  auto DeleteRowLockSet(const std::shared_ptr<std::unordered_map<table_oid_t, std::unordered_set<RID>>> &lock_set,
+                        const table_oid_t &oid, const RID &rid) -> void {
+    // 1. 查找表的行锁集合
+    auto row_lock_set = lock_set->find(oid);
+    // 2. 不存在直接返回
+    if (row_lock_set == lock_set->end()) {
+      return;
+    }
+    // 3. 删除对应行标识RID
+    row_lock_set->second.erase(rid);
+  }
+
+  /* Task 1: Deadlock Detection Methods: */
+  /* Dfs: 利用DFS遍历图中所有边, 判断是否有环 */
+  auto Dfs(txn_id_t txn_id) -> bool;
+  /* DeleteNode: 删除等待图中txn_id对应的节点 */
+  auto DeleteNode(txn_id_t txn_id) -> void; 
+
 
  private:
   /** Fall 2022 */
@@ -312,8 +398,15 @@ class LockManager {
   std::atomic<bool> enable_cycle_detection_;
   std::thread *cycle_detection_thread_;
   /** Waits-for graph representation. */
-  std::unordered_map<txn_id_t, std::vector<txn_id_t>> waits_for_;
+  std::unordered_map<txn_id_t, std::vector<txn_id_t>> waits_for_;   // 事务的等待图
   std::mutex waits_for_latch_;
+  /* 新增 */
+  std::set<txn_id_t> safe_set_;             // 用于去重的set, 类似于dfs中的used
+  std::set<txn_id_t> txn_set_;              // 事务的集合
+  std::unordered_set<txn_id_t> active_set_; // DFS过程中存储环上的txn_id Set
+
+  std::unordered_map<txn_id_t, RID> map_txn_rid_;
+  std::unordered_map<txn_id_t, table_oid_t> map_txn_oid_;
 };
 
 }  // namespace bustub
