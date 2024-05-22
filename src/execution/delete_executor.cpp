@@ -26,6 +26,19 @@ DeleteExecutor::DeleteExecutor(ExecutorContext *exec_ctx, const DeletePlanNode *
 void DeleteExecutor::Init() {
   // child和table对应的index
   child_executor_->Init();
+  /*
+   * 事务相关
+   * 1. 执行删除操作, 要先上表的，意向排他锁
+   */
+  try {
+    bool is_locked = exec_ctx_->GetLockManager()->LockTable(
+        exec_ctx_->GetTransaction(), LockManager::LockMode::INTENTION_EXCLUSIVE, table_info_->oid_);
+    if (!is_locked) {
+      throw ExecutionException("Delete Executor Get Table Lock Failed");
+    }
+  } catch (TransactionAbortException e) {
+    throw ExecutionException("Delete Executor Get Table Lock Failed");
+  }
   table_indexes_ = exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_);
 }
 
@@ -37,8 +50,22 @@ auto DeleteExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   Tuple to_delete_tuple{};
   RID emit_rid;
   int32_t delete_count = 0;
+
   // 遍历table的所有index
   while (child_executor_->Next(&to_delete_tuple, &emit_rid)) {
+    /*
+     * 事务相关
+     * 1. 执行table删除操作前, 要先获取行上的排他锁
+     */
+    try {
+      bool is_locked = exec_ctx_->GetLockManager()->LockRow(
+          exec_ctx_->GetTransaction(), LockManager::LockMode::EXCLUSIVE, table_info_->oid_, emit_rid);
+      if (!is_locked) {
+        throw ExecutionException("Delete Executor Get Row Lock Failed");
+      }
+    } catch (TransactionAbortException e) {
+      throw ExecutionException("Delete Executor Get Row Lock Failed");
+    }
     // MarkDelete: 将tuple标记为delete; (删除不是直接删除, 而是标记为不存在)
     bool deleted = table_info_->table_->MarkDelete(emit_rid, exec_ctx_->GetTransaction());
     if (deleted) {
